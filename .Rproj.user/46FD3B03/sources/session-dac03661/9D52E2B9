@@ -1,0 +1,27 @@
+{
+    "id": "9D52E2B9",
+    "path": "~/Chr1_analysis/Chr1_cancer_analysis.R",
+    "project_path": "Chr1_cancer_analysis.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1753458084397.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "tempName": "Untitled2",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "4,19",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1753618293,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1758839032722,
+    "read_only": false,
+    "read_only_alternatives": []
+}

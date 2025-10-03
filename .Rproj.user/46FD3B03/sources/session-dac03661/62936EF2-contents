@@ -1,0 +1,353 @@
+# ----- CONFIG (your filenames) -----
+FILE_VEP    <- "filtered_variants.txt"
+FILE_PANEL  <- "integrated_call_samples_v3.20130502.ALL.panel"
+PLINK_PREF  <- "chr1_cancer"              # chr1_cancer.{bed,bim,fam}
+FILE_BIM    <- paste0(PLINK_PREF, ".bim")
+FILE_FAM    <- paste0(PLINK_PREF, ".fam")
+FILE_GENO   <- "geno.raw"                 # created by: plink2 --bfile chr1_cancer --export A --out geno
+DELTA_CUT   <- 0.05
+
+# ----- libraries -----
+suppressPackageStartupMessages({
+  pkgs <- c("readr","dplyr","tidyr","stringr","purrr","ggplot2","ggrepel","viridis")
+  miss <- setdiff(pkgs, rownames(installed.packages()))
+  if (length(miss)) install.packages(miss, quiet=TRUE)
+  lapply(pkgs, require, character.only=TRUE)
+})
+
+# ===== STEP 1: Parse VEP filtered tab file =====
+cols <- c("Uploaded_variation","Location","Allele","Gene","Feature","Feature_type",
+          "Consequence","cDNA_position","CDS_position","Protein_position","Amino_acids",
+          "Codons","Existing_variation","Extra")
+
+vep <- readr::read_tsv(FILE_VEP, col_names = cols, col_types = cols(.default="c"), comment="#") %>%
+  dplyr::mutate(across(everything(), ~ifelse(is.na(.x), .x, stringr::str_trim(.x)))) %>%
+  dplyr::mutate(IMPACT = stringr::str_match(Extra, "IMPACT=([A-Z]+)")[,2],
+                Conseq_terms = stringr::str_split(coalesce(Consequence,""), ","))
+
+high_terms  <- c("stop_gained","splice_acceptor_variant","splice_donor_variant",
+                 "frameshift_variant","start_lost","stop_lost")
+impact_rank <- c(HIGH=3, MODERATE=2, LOW=1, MODIFIER=0)
+pick_max_impact <- function(x){
+  x <- x[!is.na(x)]; if(!length(x)) return(NA_character_)
+  x <- unique(x); x[order(-unname(impact_rank[x]))][1]
+}
+
+agg <- vep %>%
+  dplyr::group_by(Uploaded_variation) %>%
+  dplyr::summarise(
+    Location  = dplyr::first(Location),
+    Allele    = paste0(sort(unique(Allele[!is.na(Allele)])), collapse="|"),
+    Gene      = paste0(sort(unique(Gene[!is.na(Gene)])), collapse="|"),
+    Existing_variation = dplyr::first(Existing_variation),
+    Conseq_terms = list(sort(unique(unlist(Conseq_terms)))),
+    IMPACT = pick_max_impact(IMPACT),
+    .groups="drop"
+  ) %>%
+  dplyr::mutate(is_HIGH = IMPACT=="HIGH" | purrr::map_lgl(Conseq_terms, ~ any(.x %in% high_terms)))
+
+agg_out <- agg %>% dplyr::mutate(Conseq_terms = sapply(Conseq_terms, \(v) paste(v, collapse=",")))
+readr::write_tsv(agg_out, "variants_dedup.tsv")
+
+# positions (for optional fallback)
+is_snv_vec <- function(allele_chr) {
+  vapply(strsplit(coalesce(allele_chr, ""), "\\|", perl=TRUE), function(v) {
+    v <- v[nzchar(v)]; length(v)>0 && all(stringr::str_detect(v, "^[ACGT]$"))
+  }, logical(1))
+}
+non_rs <- agg %>% dplyr::filter(is.na(Existing_variation) | !stringr::str_detect(Existing_variation, "(?i)\\brs\\d+")) %>%
+  dplyr::filter(is_snv_vec(Allele))
+pos_snps <- stringr::str_replace(non_rs$Location, ":", "\t")
+readr::write_lines(pos_snps, "pos_snps.tsv")
+
+cat("VEP parsed: ", nrow(agg_out), " variants; pos_snps=", length(pos_snps), "\n", sep="")
+
+# ===== STEP 2: Superpopulation map from panel + fam =====
+fam <- readr::read_table(FILE_FAM, col_names = FALSE, col_types = "cccccc")
+colnames(fam) <- c("FID","IID","PAT","MAT","SEX","PHENO")
+samples <- fam$IID
+
+panel <- readr::read_tsv(FILE_PANEL, col_types = cols(.default="c"))
+stopifnot(all(c("sample","super_pop") %in% names(panel)))
+
+superpop <- panel %>%
+  dplyr::filter(sample %in% samples) %>%
+  dplyr::transmute(Sample = sample, Superpop = super_pop) %>%
+  dplyr::filter(Superpop %in% c("AFR","AMR","EAS","EUR","SAS"))
+readr::write_tsv(superpop, "superpop.tsv")
+cat("Superpop rows: ", nrow(superpop), "\n", sep="")
+
+# ===== STEP 3: Read BIM (correctly) and match VEP positions (index-based) =====
+bim <- readr::read_table(FILE_BIM, col_names = FALSE, col_types = cols(
+  X1 = col_character(),   # CHR
+  X2 = col_character(),   # ID
+  X3 = col_double(),      # CM
+  X4 = col_double(),      # POS
+  X5 = col_character(),   # A1
+  X6 = col_character()    # A2
+))
+colnames(bim) <- c("CHR","VarID","CM","POS","A1","A2")
+bim <- bim %>%
+  dplyr::mutate(
+    CHR = gsub("^chr", "", CHR, ignore.case = TRUE),
+    POS = as.integer(POS),
+    Location_key = paste0(CHR, ":", POS)
+  )
+
+ann_pos <- agg_out %>%
+  dplyr::transmute(Location_key = gsub("^chr", "", Location, ignore.case = TRUE)) %>%
+  dplyr::distinct()
+
+keep_idx <- which(bim$Location_key %in% ann_pos$Location_key)
+cat("Matched ", length(keep_idx), " BIM positions to VEP positions (by index)\n", sep = "")
+
+# ===== STEP 4: Read geno.raw, drop numeric metadata, subset by index, build var_map =====
+G0 <- readr::read_table(FILE_GENO, col_types = cols(
+  .default   = col_double(),
+  FID        = col_character(),
+  IID        = col_character()
+))
+G <- G0 %>%
+  dplyr::rename(Sample = IID) %>%
+  dplyr::select(-FID, -PAT, -MAT, -SEX, -PHENOTYPE) %>%   # drop numeric meta cols
+  dplyr::inner_join(superpop, by = "Sample")
+
+all_variant_cols <- setdiff(names(G), c("Sample","Superpop"))
+
+if (length(all_variant_cols) != nrow(bim)) {
+  stop(paste0("Mismatch: geno.raw variant cols (", length(all_variant_cols),
+              ") != BIM rows (", nrow(bim), "). Re-export geno.raw from the same subsetted BED."))
+}
+
+# Map each geno.raw column -> CHR:POS from BIM (same order)
+var_map <- tibble::tibble(
+  VarID        = all_variant_cols,
+  Location_key = bim$Location_key
+)
+
+variant_cols <- all_variant_cols[keep_idx]
+cat("Genotype matrix after subsetting: ", nrow(G), " samples x ",
+    length(variant_cols), " variants\n", sep = "")
+if (length(variant_cols) == 0) {
+  stop("Still 0 variants after index-based mapping. Fallback: subset bed with pos_snps.tsv to rebuild chr1_cancer, then re-export geno.raw.")
+}
+
+# ===== STEP 5: AF by superpop, AFR-enrichment, AFR-private, Fisher FDR =====
+long <- G %>%
+  tidyr::pivot_longer(all_of(variant_cols), names_to="VarID", values_to="dosage") %>%
+  dplyr::filter(!is.na(dosage)) %>%
+  dplyr::group_by(VarID, Superpop) %>%
+  dplyr::summarise(ALT = sum(dosage), N = n(), .groups="drop") %>%
+  dplyr::mutate(ALLELES = 2*N, REF = ALLELES - ALT, AF = ALT/ALLELES)
+
+AFw <- long %>%
+  dplyr::select(VarID, Superpop, AF, ALT, REF, ALLELES, N) %>%
+  tidyr::pivot_wider(names_from=Superpop, values_from=c(AF,ALT,REF,ALLELES,N), values_fill=0) %>%
+  dplyr::mutate(
+    AF_nonAFR = rowMeans(cbind(AF_AMR,AF_EAS,AF_EUR,AF_SAS), na.rm=TRUE),
+    DeltaAF   = AF_AFR - AF_nonAFR,
+    is_AFR_enriched = DeltaAF >= DELTA_CUT,
+    is_AFR_private  = (!is.na(AF_AFR) & AF_AFR >= 0.01) &
+      (coalesce(AF_AMR,0) < 0.001 & coalesce(AF_EAS,0) < 0.001 &
+         coalesce(AF_EUR,0) < 0.001 & coalesce(AF_SAS,0) < 0.001)
+  )
+
+fisher_tbl <- long %>%
+  dplyr::mutate(group = ifelse(Superpop=="AFR","AFR","nonAFR")) %>%
+  dplyr::group_by(VarID, group) %>%
+  dplyr::summarise(ALT=sum(ALT), REF=sum(REF), .groups="drop") %>%
+  tidyr::pivot_wider(names_from=group, values_from=c(ALT,REF), values_fill=0) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(p = fisher.test(matrix(c(ALT_AFR,REF_AFR,ALT_nonAFR,REF_nonAFR), nrow=2))$p.value) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(FDR = p.adjust(p, method="BH"))
+
+# ===== STEP 6: Merge annotation by position via var_map & save =====
+ann <- agg_out %>%
+  dplyr::mutate(Conseq_terms = stringr::str_split(coalesce(Conseq_terms,""), ",")) %>%
+  dplyr::mutate(Location_key = gsub("^chr", "", Location, ignore.case = TRUE))
+
+AFw_pos <- AFw %>% dplyr::left_join(var_map, by = "VarID")
+
+merged  <- AFw_pos %>%
+  dplyr::left_join(ann, by = "Location_key") %>%
+  dplyr::left_join(
+    fisher_tbl %>% dplyr::select(VarID, p, FDR, ALT_AFR, REF_AFR, ALT_nonAFR, REF_nonAFR),
+    by = "VarID"
+  )
+
+readr::write_tsv(AFw,        "allele_freq_by_superpop.tsv")
+readr::write_tsv(fisher_tbl, "fisher_AFR_vs_nonAFR.tsv")
+readr::write_tsv(merged,     "final_results.tsv")
+
+# ===== STEP 7: Headline numbers + figures =====
+N_total    <- dplyr::n_distinct(merged$VarID)
+N_high     <- sum((merged$is_HIGH %in% TRUE), na.rm=TRUE)
+N_enriched <- sum((merged$is_AFR_enriched %in% TRUE), na.rm=TRUE)
+N_sig      <- sum((merged$FDR < 0.05), na.rm=TRUE)
+N_private  <- sum((merged$is_AFR_private %in% TRUE), na.rm=TRUE)
+N_high_enr <- sum((merged$is_HIGH %in% TRUE) & (merged$is_AFR_enriched %in% TRUE), na.rm=TRUE)
+N_high_sig <- sum((merged$is_HIGH %in% TRUE) & (merged$FDR < 0.05), na.rm=TRUE)
+
+cat("\n===== SUMMARY =====\n",
+    "Variants analyzed: ", N_total, "\n",
+    "HIGH-impact (VEP): ", N_high, "\n",
+    "AFR-enriched (ΔAF ≥ ", DELTA_CUT, "): ", N_enriched, "\n",
+    "Significant AFR vs non-AFR (FDR<0.05): ", N_sig, "\n",
+    "AFR-private (AFR≥1%, others<0.1%): ", N_private, "\n",
+    "HIGH & AFR-enriched: ", N_high_enr, "\n",
+    "HIGH & FDR<0.05: ", N_high_sig, "\n", sep="")
+
+# 1) ΔAF vs -log10(p)
+merged %>%
+  dplyr::mutate(minuslog10p = -log10(p),
+                label = ifelse(FDR<0.05 & (is_HIGH %in% TRUE), VarID, NA)) %>%
+  ggplot2::ggplot(ggplot2::aes(x=DeltaAF, y=minuslog10p)) +
+  ggplot2::geom_point(alpha=0.6) +
+  ggplot2::geom_vline(xintercept=DELTA_CUT, linetype="dashed") +
+  ggplot2::geom_hline(yintercept=-log10(0.05), linetype="dashed") +
+  ggrepel::geom_text_repel(ggplot2::aes(label=label), na.rm=TRUE, max.overlaps=20, size=3) +
+  ggplot2::labs(x="ΔAF (AFR − mean non-AFR)", y="-log10(p)", title="AFR enrichment per Chr1 cancer-linked variant") +
+  ggplot2::theme_bw()
+ggplot2::ggsave("fig_volcano_deltaAF_vs_p.png", width=7, height=5, dpi=300)
+
+#plots
+
+# Load required libraries
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+
+# 1. Load the final results
+final_results <- read_tsv("final_results.tsv")
+
+# 2. Inspect data structure
+glimpse(final_results)
+
+# Expected columns: VarID, ALT_AFR, REF_AFR, ALT_nonAFR, REF_nonAFR, p, FDR
+
+# 3. Filter for significant variants (FDR < 0.05)
+sig_variants <- final_results %>%
+  filter(FDR < 0.05)
+
+# Check how many significant variants
+cat("Number of significant variants:", nrow(sig_variants), "\n")
+
+# 4. Prepare data for heatmap
+# Assuming you have allele frequencies for AFR, AMR, EAS, EUR, SAS
+# in columns like AF_AFR, AF_AMR, etc.
+sig_variants_long <- sig_variants %>%
+  select(VarID, starts_with("AF_")) %>%
+  pivot_longer(
+    cols = -VarID,
+    names_to = "Population",
+    values_to = "AF"
+  ) %>%
+  mutate(Population = sub("^AF_", "", Population)) # Clean population names
+
+# 5. Plot heatmap
+heatmap_plot <- ggplot(sig_variants_long, aes(x = Population, y = factor(VarID), fill = AF)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma") +
+  labs(
+    title = "Allele Frequencies of Significant Variants",
+    x = "Superpopulation",
+    y = "Variant",
+    fill = "Allele Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_blank(), # Hide variant IDs if there are many
+    axis.ticks.y = element_blank()
+  )
+
+# Display the plot
+print(heatmap_plot)
+
+# 6. Save the heatmap to file
+ggsave("fig_sig_variant_heatmap.png", plot = heatmap_plot, width = 8, height = 6, dpi = 300)
+
+# 7. Save the filtered significant variants for reference
+write_tsv(sig_variants, "significant_variants.tsv")
+
+ggplot(merged, aes(x = POS, y = DeltaAF, color = FDR < 0.05)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "blue") +
+  geom_hline(yintercept = 0.10, linetype = "dashed", color = "red") +
+  scale_color_manual(values = c("grey70", "darkred")) +
+  labs(
+    title = "AFR vs non-AFR ΔAF Across Chromosome 1 Cancer-Linked Variants",
+    x = "Chromosome 1 Position",
+    y = "ΔAF (AFR - mean non-AFR)",
+    color = "Significant (FDR<0.05)"
+  ) +
+  theme_minimal()
+
+ggsave("fig_deltaAF_chr1.png", width = 9, height = 5, dpi = 300)
+
+merged <- merged %>%
+  mutate(
+    POS = as.numeric(sub(".*:", "", Location))
+  )
+
+#pca
+
+# ===== PCA ANALYSIS OF GENOTYPE DATA =====
+
+# ===============================
+# 1. Prepare Genotype Matrix
+# ===============================
+# G should already contain: Sample, Superpop, and genotype columns
+# Remove non-numeric columns
+geno_matrix <- G %>%
+  select(-Sample, -Superpop) %>%
+  as.matrix()
+
+# Replace NA values with 0 to avoid PCA errors
+geno_matrix[is.na(geno_matrix)] <- 0
+
+# Confirm matrix shape
+cat("Genotype matrix dimensions: ", dim(geno_matrix)[1], "samples x", dim(geno_matrix)[2], "variants\n")
+
+# ===============================
+# 2. Run PCA
+# ===============================
+pca_res <- prcomp(geno_matrix, center = TRUE, scale. = TRUE)
+
+# ===============================
+# 3. Prepare PCA Output
+# ===============================
+pca_df <- as.data.frame(pca_res$x[, 1:2]) %>%
+  mutate(
+    Sample = G$Sample,
+    Superpop = G$Superpop
+  )
+
+# ===============================
+# 4. Plot PCA
+# ===============================
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Superpop)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(
+    title = "PCA of Chromosome 1 Cancer-Linked Variants",
+    x = paste0("PC1 (", round(100 * summary(pca_res)$importance[2,1], 2), "% variance)"),
+    y = paste0("PC2 (", round(100 * summary(pca_res)$importance[2,2], 2), "% variance)"),
+    color = "Superpopulation"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# ===============================
+# 5. Save PCA Plot
+# ===============================
+ggsave("fig_PCA_chr1.png", width = 7, height = 5, dpi = 300)
+
+# ===============================
+# 6. Optional – View Clustering Counts
+# ===============================
+cat("Sample counts by Superpopulation:\n")
+print(table(pca_df$Superpop))
+
+

@@ -1,0 +1,26 @@
+{
+    "id": "3525AA45",
+    "path": "~/Chr1_analysis/table_sig_variants.tsv",
+    "project_path": "table_sig_variants.tsv",
+    "type": "text",
+    "hash": "847199240",
+    "contents": "",
+    "dirty": false,
+    "created": 1758834967146.0,
+    "source_on_save": false,
+    "relative_order": 8,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "0,0",
+        "scrollLine": "20"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1755351054,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1755351054,
+    "read_only": false,
+    "read_only_alternatives": []
+}

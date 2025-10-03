@@ -1,0 +1,27 @@
+{
+    "id": "62936EF2",
+    "path": "~/Chr1_analysis/variant_annnotation.R",
+    "project_path": "variant_annnotation.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1753618309269.0,
+    "source_on_save": false,
+    "relative_order": 10,
+    "properties": {
+        "tempName": "Untitled2",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "340,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1753650212,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1758836451013,
+    "read_only": false,
+    "read_only_alternatives": []
+}

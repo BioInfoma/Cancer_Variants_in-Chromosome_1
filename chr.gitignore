@@ -1,0 +1,25 @@
+# Large genomic files
+*.vcf
+*.vcf.gz
+*.vcf.gz.*
+*.bcf
+*.bed
+*.bim
+*.fam
+*.raw
+*.frq
+*.clst
+*.eigenvec
+*.eigenval
+*.panel
+*.index
+
+# Backup & tools
+backup/
+ensembl-vep/
+
+# R and Python cache
+*.Rhistory
+*.RData
+__pycache__/
+*.ipynb_checkpoints

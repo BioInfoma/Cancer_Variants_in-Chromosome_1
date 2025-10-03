@@ -1,7 +1,3 @@
-
----
-
-```markdown
 # Cancer-linked Chromosome 1 Variants: African Ancestry-associated Frequency Shifts in 1000 Genomes
 
 **Authors:**  
@@ -47,14 +43,12 @@ This project investigates whether germline variants in **cancer-associated regio
 
 ---
 
+### 🖼️ Example Figures
+PCA plot of Chromosome 1 cancer-linked variants across global populations:  
+![PCA of AFR vs non-AFR](results/pca_chr1.png)  
+
 Allele frequency shifts of significant variants:  
 ![Allele Frequency Bar Plot](results/allele_freq_shifts.png)  
-
-Variant impact summary:  
-![Impact Distribution](results/variant_impact.png)  
-
----
-
 
 ---
 
@@ -65,69 +59,3 @@ Variant impact summary:
 - Highlights the need for **inclusive global population panels** in cancer genetics.  
 
 ---
-
-## 📂 Repository Structure
-```
-
-cancer-chr1-analysis/
-│── data/          # Processed datasets, frequency files, panel info (raw excluded)
-│── scripts/       # R and Python scripts for QC, PCA, stats, and plots
-│── results/       # Output figures, PCA plots, clustering, and tables
-│── docs/          # Abstract, notes, supplementary files
-│── backup/        # Temporary backup files (not tracked in GitHub)
-│── ensembl-vep/   # External tool folder (not tracked in GitHub)
-│── README.md      # Project overview and usage instructions
-│── .gitignore     # Excluded large or unnecessary files
-
-````
-
----
-
-## ⚙️ Reproducibility
-### Requirements
-- **R (≥4.0)** with:
-  - `tidyverse`, `data.table`, `ggplot2`, `cluster`, `factoextra`
-- **Python (optional, for plots/scripts):**
-  - `pandas`, `numpy`, `matplotlib`, `seaborn`
-- **Other tools:**
-  - [Ensembl VEP](https://www.ensembl.org/info/docs/tools/vep/index.html) for variant annotation  
-  - [PLINK](https://www.cog-genomics.org/plink/) for population genetics analyses  
-
-### Steps
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/BioInfoma/Cancer_Variants_in-Chromosome_1.git
-   cd Cancer_Variants_in-Chromosome_1
-````
-
-2. Place processed or subset data into `data/` (raw 1000 Genomes files excluded).
-
-3. Run the main R script:
-
-   ```bash
-   Rscript scripts/Chr1_cancer_analysis.R
-   ```
-
-4. Some of the Outputs (plots, tables, PCA results) will be saved in the `results/` folder.
-
----
-
-## 📎 Notes
-
-* **Raw VCFs from 1000 Genomes are not uploaded** due to size.
-* This repository contains **processed data, scripts, and reproducible workflows**.
-* For full raw datasets, see the [1000 Genomes Project](https://www.internationalgenome.org/).
-
----
-
-## 🔑 Keywords
-
-allele frequency · cancer genetics · African ancestry · population genomics · Chromosome 1 · 1000 Genomes Project
-
-```
-
----
- 
-
-👉 Do you also want me to draft a **short project description (2–3 sentences)** you can use for your GitHub repo tagline and LinkedIn post?
-```

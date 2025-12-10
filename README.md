@@ -8,14 +8,14 @@ Temitope Kolawole¹*, Grace Adeloye¹, Ifedayo Fashola¹, Esther Orji¹
 
 ---
 
-## 📌 Background
+## Background
 Most cancer genetics studies rely heavily on allele-frequency data from European populations. This creates a bias where variants common in non-European groups, particularly Africans, may be overlooked or mis-ranked.  
 
 This project investigates whether germline variants in **cancer-associated regions of Chromosome 1** show ancestry-related allele frequency patterns, with a focus on African populations, using the **1000 Genomes Project Phase 3 dataset**.
 
 ---
 
-## 🧪 Methods
+## Methods
 - **Data source:** 1000 Genomes Phase 3, 2,504 individuals across AFR, AMR, EAS, EUR, SAS populations.  
 - **Intervals studied:** 8 cancer-linked regions on Chromosome 1.  
 - **Variant processing:**  
@@ -39,11 +39,11 @@ This project investigates whether germline variants in **cancer-associated regio
 - Of these, **3 were HIGH-impact variants**.  
 - **3 variants** reached ΔAF ≥ 0.10, though none were HIGH-impact.  
 - No AFR-private variants (≥1% AFR, <0.1% elsewhere) were identified → differences reflect **frequency skews** not exclusive alleles.  
-- PCA showed clear AFR vs non-AFR separation, with small but statistically significant global structure (*χ² = 33,833; p < 2.2×10⁻¹⁶; Cramér’s V = 0.017*).  
-
+- PCA showed clear AFR vs non-AFR separation, with small but statistically significant global structure (*χ² = 33,833; p < 2.2×10⁻¹⁶; Cramér’s V = 0.017*).
+  
 ---
 
-### 🖼️ Example Figures
+### Figures
 PCA plot of Chromosome 1 cancer-linked variants across global populations:  
 ![PCA of AFR vs non-AFR](results/pca_chr1.png)  
 

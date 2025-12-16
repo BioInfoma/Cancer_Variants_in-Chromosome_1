@@ -38,18 +38,4 @@ bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\n' chr1_cancer.biallelic.vcf.gz > ve
 
 
 #Downstream analysis in R
-#Anonotating variants
-vep -i vep_input.tsv \
-    --format minimal \
-    --output_file annotated_variants.txt \
-    --cache \
-    --dir_cache ~/.vep \
-    --assembly GRCh38 \
-    --vcf \
-    --symbol \
-    --terms SO \
-    --plugin LoF \
-    --plugin CADD,/path/to/whole_genome_SNVs.tsv.gz \
-    --fork 4
-
 

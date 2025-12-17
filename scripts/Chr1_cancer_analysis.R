@@ -122,16 +122,7 @@ variant_df <- do.call(rbind, variant_info) %>% as.data.frame()
 colnames(variant_df) <- c("CHR", "POS", "REF", "ALT")
 variant_df$POS <- as.integer(as.character(variant_df$POS))
 
-# Optional: Save for annotation
+# Save for annotation
 write.table(variant_df, "all_variants.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 
 
-#Annotate All Variants Using biomaRt
-variant_df <- unique(geno[, .(CHR, POS, REF, ALT)])
-variant_df[, `:=`(POS = as.integer(POS), start = POS, end = POS)]
-
-vep_input_chr_pos <- paste(variant_df$CHR, variant_df$POS, sep = "\t")
-writeLines(vep_input_chr_pos, "vep_input_chr_pos.txt")
-
-# Save raw annotation
-write.csv(annot, "all_variants_annotated.csv", row.names = FALSE)
